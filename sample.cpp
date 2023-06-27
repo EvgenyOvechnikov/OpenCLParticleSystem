@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <omp.h>
+#include <map>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -89,6 +90,7 @@ struct rgba
 };
 
 // non-constant global variables:
+std::map<cl_int, char*> ErrorCodes;
 int	ActiveButton;		// current button that is down
 GLuint	AxesList;		// Display list to hold the axes
 int	AxesOn;			    // Axes ON or OFF
@@ -126,6 +128,7 @@ cl_platform_id		PlatformID;
 // function prototypes:
 void	PrintOpenclInfo();
 void	SelectOpenclDevice();
+void    SetUpErrorCodes();
 char*   Vendor(cl_uint);
 char*   Type(cl_device_type);
 
@@ -395,9 +398,12 @@ InitCL()
     // this fills the globals Platform and Device:
     SelectOpenclDevice();
 
+    // Writing up error descriptions
+    SetUpErrorCodes();
+
     // see if we can even open the opencl Kernel Program
     // (no point going on if we can't):
-    FILE* fp = fopen(CL_FILE_NAME, "r");
+    FILE* fp = fopen(CL_FILE_NAME, "rb");
     if (fp == NULL)
     {
         fprintf(stderr, "Cannot open OpenCL source file '%s'\n", CL_FILE_NAME);
@@ -433,11 +439,10 @@ InitCL()
 
     cl_context Context = clCreateContext(props, 1, &Device, NULL, NULL, &status);
     PrintCLError(status, "clCreateContext: ");
-
+ 
     // 4. create an opencl command queue:
     CmdQueue = clCreateCommandQueue(Context, Device, 0, &status);
-    if (status != CL_SUCCESS)
-        fprintf(stderr, "clCreateCommandQueue failed\n");
+    PrintCLError(status, "clCreateCommandQueue: ");
 
     // create the velocity array and the opengl vertex array buffer and color array buffer:
     delete[] hVel;
@@ -484,8 +489,7 @@ InitCL()
     char* strings[1];
     strings[0] = clProgramText;
     Program = clCreateProgramWithSource(Context, 1, (const char**)strings, NULL, &status);
-    if (status != CL_SUCCESS)
-        fprintf(stderr, "clCreateProgramWithSource failed\n");
+    PrintCLError(status, "clCreateProgramWithSource: ");
     delete[] clProgramText;
 
     // 8. compile and link the Kernel code:
@@ -1001,80 +1005,19 @@ IsCLExtensionSupported(const char* extension)
     return false;
 }
 
-struct errorcode
-{
-    cl_int		statusCode;
-    char* meaning;
-}
-ErrorCodes[] =
-{
-    { CL_SUCCESS,				            ""					                    },
-    { CL_DEVICE_NOT_FOUND,			        "Device Not Found"			            },
-    { CL_DEVICE_NOT_AVAILABLE,		        "Device Not Available"			        },
-    { CL_COMPILER_NOT_AVAILABLE,		    "Compiler Not Available"		        },
-    { CL_MEM_OBJECT_ALLOCATION_FAILURE,	    "Memory Object Allocation Failure"	    },
-    { CL_OUT_OF_RESOURCES,			        "Out of resources"			            },
-    { CL_OUT_OF_HOST_MEMORY,		        "Out of Host Memory"			        },
-    { CL_PROFILING_INFO_NOT_AVAILABLE,	    "Profiling Information Not Available"	},
-    { CL_MEM_COPY_OVERLAP,			        "Memory Copy Overlap"			        },
-    { CL_IMAGE_FORMAT_MISMATCH,		        "Image Format Mismatch"			        },
-    { CL_IMAGE_FORMAT_NOT_SUPPORTED,	    "Image Format Not Supported"		    },
-    { CL_BUILD_PROGRAM_FAILURE,		        "Build Program Failure"			        },
-    { CL_MAP_FAILURE,			            "Map Failure"				            },
-    { CL_INVALID_VALUE,			            "Invalid Value"				            },
-    { CL_INVALID_DEVICE_TYPE,		        "Invalid Device Type"			        },
-    { CL_INVALID_PLATFORM,			        "Invalid Platform"			            },
-    { CL_INVALID_DEVICE,			        "Invalid Device"			            },
-    { CL_INVALID_CONTEXT,			        "Invalid Context"			            },
-    { CL_INVALID_QUEUE_PROPERTIES,		    "Invalid Queue Properties"		        },
-    { CL_INVALID_COMMAND_QUEUE,		        "Invalid Command Queue"			        },
-    { CL_INVALID_HOST_PTR,			        "Invalid Host Pointer"			        },
-    { CL_INVALID_MEM_OBJECT,		        "Invalid Memory Object"			        },
-    { CL_INVALID_IMAGE_FORMAT_DESCRIPTOR,	"Invalid Image Format Descriptor"	    },
-    { CL_INVALID_IMAGE_SIZE,		        "Invalid Image Size"			        },
-    { CL_INVALID_SAMPLER,			        "Invalid Sampler"			            },
-    { CL_INVALID_BINARY,			        "Invalid Binary"			            },
-    { CL_INVALID_BUILD_OPTIONS,		        "Invalid Build Options"			        },
-    { CL_INVALID_PROGRAM,			        "Invalid Program"			            },
-    { CL_INVALID_PROGRAM_EXECUTABLE,	    "Invalid Program Executable"		    },
-    { CL_INVALID_KERNEL_NAME,		        "Invalid Kernel Name"			        },
-    { CL_INVALID_KERNEL_DEFINITION,		    "Invalid Kernel Definition"		        },
-    { CL_INVALID_KERNEL,			        "Invalid Kernel"			            },
-    { CL_INVALID_ARG_INDEX,			        "Invalid Argument Index"		        },
-    { CL_INVALID_ARG_VALUE,			        "Invalid Argument Value"		        },
-    { CL_INVALID_ARG_SIZE,			        "Invalid Argument Size"			        },
-    { CL_INVALID_KERNEL_ARGS,		        "Invalid Kernel Arguments"		        },
-    { CL_INVALID_WORK_DIMENSION,		    "Invalid Work Dimension"		        },
-    { CL_INVALID_WORK_GROUP_SIZE,		    "Invalid Work Group Size"		        },
-    { CL_INVALID_WORK_ITEM_SIZE,		    "Invalid Work Item Size"		        },
-    { CL_INVALID_GLOBAL_OFFSET,		        "Invalid Global Offset"			        },
-    { CL_INVALID_EVENT_WAIT_LIST,		    "Invalid Event Wait List"		        },
-    { CL_INVALID_EVENT,			            "Invalid Event"				            },
-    { CL_INVALID_OPERATION,			        "Invalid Operation"			            },
-    { CL_INVALID_GL_OBJECT,			        "Invalid GL Object"			            },
-    { CL_INVALID_BUFFER_SIZE,		        "Invalid Buffer Size"			        },
-    { CL_INVALID_MIP_LEVEL,			        "Invalid MIP Level"			            },
-    { CL_INVALID_GLOBAL_WORK_SIZE,		    "Invalid Global Work Size"		        },
-};
-
 void
 PrintCLError(cl_int errorCode, char* prefix, FILE* fp)
 {
-    if (errorCode == CL_SUCCESS)
+    if (errorCode == CL_SUCCESS) {
         return;
-
-    const int numErrorCodes = sizeof(ErrorCodes) / sizeof(struct errorcode);
-    char* meaning = "";
-    for (int i = 0; i < numErrorCodes; i++)
-    {
-        if (errorCode == ErrorCodes[i].statusCode)
-        {
-            meaning = ErrorCodes[i].meaning;
-            break;
-        }
     }
 
-    fprintf(fp, "%s %s\n", prefix, meaning);
+    if (ErrorCodes.find(errorCode) == ErrorCodes.end()) {
+        fprintf(fp, "%s %s\n", prefix, "Unknown error");
+    }
+    else {
+        fprintf(fp, "%s %s\n", prefix, ErrorCodes[errorCode]);
+    }
 }
 
 // opencl vendor ids:
@@ -1090,7 +1033,6 @@ PrintOpenclInfo()
     fprintf(stderr, "PrintInfo:\n");
 
     // find out how many platforms are attached here and get their ids:
-
     cl_uint numPlatforms;
     status = clGetPlatformIDs(0, NULL, &numPlatforms);
     if (status != CL_SUCCESS)
@@ -1150,7 +1092,6 @@ PrintOpenclInfo()
         for (int d = 0; d < (int)numDevices; d++)
         {
             fprintf(stderr, "\tDevice #%d:\n", d);
-            size_t size;
             cl_device_type type;
             cl_uint ui;
             size_t sizes[3] = { 0, 0, 0 };
@@ -1304,7 +1245,7 @@ SelectOpenclDevice()
                 }
                 else										// holding a gpu -- is a better gpu available?
                 {
-                    if (bestDeviceVendor == ID_INTEL)			// currently holding an intel gpu
+                    if (bestDeviceVendor == ID_INTEL || bestDeviceVendor == ID_AMD)
                     {										// we are assuming we just found a bigger, badder nvidia or amd gpu
                         bestPlatform = p;
                         bestDevice = d;
@@ -1329,6 +1270,58 @@ SelectOpenclDevice()
         fprintf(stderr, "I have selected Platform #%d, Device #%d\n", bestPlatform, bestDevice);
         fprintf(stderr, "Vendor = %s, Type = %s\n", Vendor(bestDeviceVendor), Type(bestDeviceType));
     }
+}
+
+void
+SetUpErrorCodes() {
+    ErrorCodes[CL_SUCCESS]                              = "Success!";
+    ErrorCodes[CL_DEVICE_NOT_FOUND]                     = "Device Not Found";
+    ErrorCodes[CL_DEVICE_NOT_AVAILABLE]                 = "Device Not Available";
+    ErrorCodes[CL_COMPILER_NOT_AVAILABLE]               = "Compiler Not Available";
+    ErrorCodes[CL_MEM_OBJECT_ALLOCATION_FAILURE]        = "Memory Object Allocation Failure";
+    ErrorCodes[CL_OUT_OF_RESOURCES]                     = "Out of resources";
+    ErrorCodes[CL_OUT_OF_HOST_MEMORY]                   = "Out of Host Memory";
+    ErrorCodes[CL_PROFILING_INFO_NOT_AVAILABLE]         = "Profiling Information Not Available";
+    ErrorCodes[CL_MEM_COPY_OVERLAP]                     = "Memory Copy Overlap";
+    ErrorCodes[CL_IMAGE_FORMAT_MISMATCH]                = "Image Format Mismatch";
+    ErrorCodes[CL_IMAGE_FORMAT_NOT_SUPPORTED]           = "Image Format Not Supported";
+    ErrorCodes[CL_BUILD_PROGRAM_FAILURE]                = "Build Program Failure";
+    ErrorCodes[CL_MAP_FAILURE]                          = "Map Failure";
+    ErrorCodes[CL_INVALID_VALUE]                        = "Invalid Value";
+    ErrorCodes[CL_INVALID_DEVICE_TYPE]                  = "Invalid Device Type";
+    ErrorCodes[CL_INVALID_PLATFORM]                     = "Invalid Platform";
+    ErrorCodes[CL_INVALID_DEVICE]                       = "Invalid Device";
+    ErrorCodes[CL_INVALID_CONTEXT]                      = "Invalid Context";
+    ErrorCodes[CL_INVALID_QUEUE_PROPERTIES]             = "Invalid Queue Properties";
+    ErrorCodes[CL_INVALID_COMMAND_QUEUE]                = "Invalid Command Queue";
+    ErrorCodes[CL_INVALID_HOST_PTR]                     = "Invalid Host Pointer";
+    ErrorCodes[CL_INVALID_MEM_OBJECT]                   = "Invalid Memory Object";
+    ErrorCodes[CL_INVALID_IMAGE_FORMAT_DESCRIPTOR]      = "Invalid Image Format Descriptor";
+    ErrorCodes[CL_INVALID_IMAGE_SIZE]                   = "Invalid Image Size";
+    ErrorCodes[CL_INVALID_SAMPLER]                      = "Invalid Sampler";
+    ErrorCodes[CL_INVALID_BINARY]                       = "Invalid Binary";
+    ErrorCodes[CL_INVALID_BUILD_OPTIONS]                = "Invalid Build Options";
+    ErrorCodes[CL_INVALID_PROGRAM]                      = "Invalid Program";
+    ErrorCodes[CL_INVALID_PROGRAM_EXECUTABLE]           = "Invalid Program Executable";
+    ErrorCodes[CL_INVALID_KERNEL_NAME]                  = "Invalid Kernel Name";
+    ErrorCodes[CL_INVALID_KERNEL_DEFINITION]            = "Invalid Kernel Definition";
+    ErrorCodes[CL_INVALID_KERNEL]                       = "Invalid Kernel";
+    ErrorCodes[CL_INVALID_ARG_INDEX]                    = "Invalid Argument Index";
+    ErrorCodes[CL_INVALID_ARG_VALUE]                    = "Invalid Argument Value";
+    ErrorCodes[CL_INVALID_ARG_SIZE]                     = "Invalid Argument Size";
+    ErrorCodes[CL_INVALID_KERNEL_ARGS]                  = "Invalid Kernel Arguments";
+    ErrorCodes[CL_INVALID_WORK_DIMENSION]               = "Invalid Work Dimension";
+    ErrorCodes[CL_INVALID_WORK_GROUP_SIZE]              = "Invalid Work Group Size";
+    ErrorCodes[CL_INVALID_WORK_ITEM_SIZE]               = "Invalid Work Item Size";
+    ErrorCodes[CL_INVALID_GLOBAL_OFFSET]                = "Invalid Global Offset";
+    ErrorCodes[CL_INVALID_EVENT_WAIT_LIST]              = "Invalid Event Wait List";
+    ErrorCodes[CL_INVALID_EVENT]                        = "Invalid Event";
+    ErrorCodes[CL_INVALID_OPERATION]                    = "Invalid Operation";
+    ErrorCodes[CL_INVALID_GL_OBJECT]                    = "Invalid GL Object";
+    ErrorCodes[CL_INVALID_BUFFER_SIZE]                  = "Invalid Buffer Size";
+    ErrorCodes[CL_INVALID_MIP_LEVEL]                    = "Invalid MIP Level";
+    ErrorCodes[CL_INVALID_GLOBAL_WORK_SIZE]             = "Invalid Global Work Size";
+    ErrorCodes[CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR]  = "Invalid GL Sharegroup Reference";
 }
 
 char*

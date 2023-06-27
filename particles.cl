@@ -30,23 +30,24 @@ IsInsideSphere(point p, sphere s)
 
 // This function rotates color in curcular manner
 // random -> green -> blue -> red -> green -> blue -> red ...
+// AMD systems do not understand .r, .g, .b notation. Changed to .x, .y, .z
 color
 RotateColor(color c) {
     color res;
-    if (c.r == 0. && c.g == 1. && c.b == 0) {
-        res.r = 0.;
-        res.g = 0.;
-        res.b = 1.;
+    if (c.x == 0. && c.y == 1. && c.z == 0) {
+        res.x = 0.;     // res.r = 0.;
+        res.y = 0.;     // res.g = 0.;
+        res.z = 1.;     // res.b = 1.;
     }
-    else if (c.r == 0. && c.g == 0. && c.b == 1) {
-        res.r = 1.;
-        res.g = 0.;
-        res.b = 0.;
+    else if (c.x == 0. && c.y == 0. && c.z == 1) {
+        res.x = 1.;     // res.r = 1.;
+        res.y = 0.;     // res.g = 0.;
+        res.z = 0.;     // res.b = 0.;
     }
     else {
-        res.r = 0.;
-        res.g = 1.;
-        res.b = 0.;
+        res.x = 0.;     // res.r = 0.;
+        res.y = 1.;     // res.g = 1.;
+        res.z = 0.;     // res.b = 0.;
     }
     return res;
 }
